@@ -33,7 +33,10 @@ export async function AuthNav() {
   return (
     <>
       <span className="whitespace-nowrap">
-        {user.username} ({user.karma})
+        <Link prefetch={true} href={`/user/${user.id.replace(/^user_/, "")}`}>
+          {user.username}
+        </Link>{" "}
+        ({user.karma})
       </span>
       <span className="hidden md:inline px-1">|</span>
       <Logout />
