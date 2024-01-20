@@ -1,50 +1,114 @@
-import { db, usersTable, commentsTable } from "@/app/db";
+import { db } from "@/app/db";
 import { sql, desc } from "drizzle-orm";
 import { headers } from "next/headers";
 import { auth } from "@/app/auth";
 import { nanoid } from "nanoid";
 import { TimeAgo } from "@/components/time-ago";
+import type { RowList } from "postgres";
+
+type CommentFromDB = {
+  id: string;
+  comment: string;
+  username: string;
+  author: string;
+  created_at: string;
+  parent_id: string | null;
+  ancestors: number[];
+  rn: number;
+};
+
+interface CommentWithChildren extends CommentFromDB {
+  children?: CommentWithChildren[];
+}
 
 async function getComments({
   storyId,
   author,
+  page = 0,
+  pageSize = 10,
 }: {
   storyId?: string;
   author?: string;
+  page?: number;
+  pageSize?: number;
 }) {
-  const comments = await db
-    .select({
-      id: commentsTable.id,
-      comment: commentsTable.comment,
-      username: commentsTable.username,
-      author: commentsTable.author,
-      author_username: usersTable.username,
-      created_at: commentsTable.created_at,
-      parent_id: commentsTable.parent_id,
-    })
-    .from(commentsTable)
-    .where(
-      storyId != null
-        ? sql`${commentsTable.story_id} = ${storyId}`
-        : author != null
-        ? sql`${commentsTable.author} = ${author}`
-        : sql`1 = 1`
+  const sId = storyId ?? "";
+  const aId = author ?? "";
+
+  const commentsFromDB = (await db.execute(sql`
+    WITH RECURSIVE comment_tree AS (
+      SELECT 
+        comments.id,
+        comments.comment,
+        COALESCE(comments.username, users.username) AS username,
+        comments.author,
+        comments.created_at,
+        comments.parent_id,
+        ARRAY[]::VARCHAR[] AS ancestors,
+        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn
+      FROM 
+        comments
+      LEFT JOIN 
+        users ON users.id = comments.author
+      WHERE 
+        comments.parent_id IS NULL
+        AND (${sId} = '' OR comments.story_id = $1)
+        AND (${aId} = '' OR comments.author = $2)
+      UNION ALL
+      SELECT 
+        comments.id,
+        comments.comment,
+        COALESCE(comments.username, users.username) AS username,
+        comments.author,
+        comments.created_at,
+        comments.parent_id,
+        comment_tree.ancestors || comments.parent_id,
+        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn
+      FROM 
+        comments
+      JOIN 
+        comment_tree ON comments.parent_id = comment_tree.id
+      LEFT JOIN 
+        users ON users.id = comments.author
     )
-    .orderBy(desc(commentsTable.created_at))
-    .leftJoin(usersTable, sql`${usersTable.id} = ${commentsTable.author}`)
-    .limit(50);
-  return comments;
+    SELECT * FROM comment_tree
+  `)) as unknown as { rows: CommentFromDB[] };
+
+  console.debug("commentsFromDB", commentsFromDB);
+
+  // Create a map of comments by their ID
+  const commentsMap = new Map<string, CommentWithChildren>();
+  commentsFromDB.rows.forEach((comment) => {
+    commentsMap.set(comment.id, { ...comment });
+  });
+
+  // Assign each comment to its parent's `children` array
+  commentsFromDB.rows.forEach((comment) => {
+    if (comment.parent_id !== null) {
+      let parent = commentsMap.get(comment.parent_id);
+      while (parent) {
+        if (!parent.children) {
+          parent.children = [];
+        }
+        parent.children.push(commentsMap.get(comment.id)!);
+        if (parent.parent_id !== null) {
+          parent = commentsMap.get(parent.parent_id);
+        } else {
+          break;
+        }
+      }
+    }
+  });
+
+  // since we've stored all nested comments within the top-level
+  // comments as children, just return the top-level comments with
+  // their nested children
+  const topLevelComments = Array.from(commentsMap.values()).filter(
+    (comment) => comment.parent_id === null
+  );
+
+  return topLevelComments;
 }
-
-// something chatgpt suggested when I asked it how to extract
-// the inferred Comment type from a Promise<Comment[]>
-type Comment = ReturnType<typeof getComments> extends Promise<
-  Array<infer ArrayType>
->
-  ? ArrayType
-  : never;
-
-type CommentWithChildren = Comment & { children?: Comment[] };
 
 export async function Comments({
   storyId,
@@ -57,39 +121,11 @@ export async function Comments({
   const rid = headers().get("x-vercel-id") ?? nanoid();
 
   console.time(`fetch comments ${storyId} (req: ${rid})`);
-  const comments = await getComments({
+  const commentsWithChildren = await getComments({
     storyId,
     author,
   });
   console.timeEnd(`fetch comments ${storyId} (req: ${rid})`);
-
-  const commentsWithChildren = [] as CommentWithChildren[];
-  const commentIndex = {} as Record<string, CommentWithChildren>;
-
-  for (const comment of comments) {
-    commentIndex[comment.id] = comment;
-  }
-
-  for (const comment of comments) {
-    if (comment.parent_id == null) {
-      commentsWithChildren.push(comment);
-    } else {
-      const parent = commentIndex[comment.parent_id];
-
-      // there is a chance the parent comment hasn't been fetched yet
-      // ignore for now
-      if (parent) {
-        if (parent.children == null) {
-          parent.children = [];
-        }
-        parent.children.push(comment);
-      }
-    }
-  }
-
-  commentsWithChildren.sort((a, b) => {
-    return b.created_at.getTime() - a.created_at.getTime();
-  });
 
   return commentsWithChildren.length === 0 ? (
     <div>No comments to show</div>
@@ -169,8 +205,8 @@ function CommentItem({
         <div className="flex flex-col gap-3">
           <div>
             <p className="mb-1 text-sm text-gray-600">
-              {comment.author_username ?? comment.username}{" "}
-              <TimeAgo date={comment.created_at} now={now} />{" "}
+              {comment.username}{" "}
+              <TimeAgo date={new Date(comment.created_at)} now={now} />{" "}
               <span aria-hidden={true}>|</span>{" "}
               {i > 0 && (
                 <>
