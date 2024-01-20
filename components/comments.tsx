@@ -24,8 +24,8 @@ interface CommentWithChildren extends CommentFromDB {
 async function getComments({
   storyId,
   author,
-  page = 0,
-  pageSize = 10,
+  page = 1,
+  pageSize = 3,
 }: {
   storyId?: string;
   author?: string;
@@ -45,15 +45,16 @@ async function getComments({
         comments.created_at,
         comments.parent_id,
         ARRAY[]::VARCHAR[] AS ancestors,
-        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn
+        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn,
+        ROW_NUMBER() OVER(ORDER BY comments.created_at DESC) AS row_num
       FROM 
         comments
       LEFT JOIN 
         users ON users.id = comments.author
       WHERE 
         comments.parent_id IS NULL
-        AND (${sId} = '' OR comments.story_id = $1)
-        AND (${aId} = '' OR comments.author = $2)
+        AND (${sId} = '' OR comments.story_id = ${sId})
+        AND (${aId} = '' OR comments.author = ${aId})
       UNION ALL
       SELECT 
         comments.id,
@@ -63,7 +64,8 @@ async function getComments({
         comments.created_at,
         comments.parent_id,
         comment_tree.ancestors || comments.parent_id,
-        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn
+        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn,
+        comment_tree.row_num
       FROM 
         comments
       JOIN 
@@ -72,6 +74,7 @@ async function getComments({
         users ON users.id = comments.author
     )
     SELECT * FROM comment_tree
+    WHERE row_num BETWEEN ((${page}::INTEGER - 1) * ${pageSize}::INTEGER + 1) AND (${page}::INTEGER * ${pageSize}::INTEGER)
   `)) as unknown as { rows: CommentFromDB[] };
 
   console.debug("commentsFromDB", commentsFromDB);
@@ -79,33 +82,23 @@ async function getComments({
   // Create a map of comments by their ID
   const commentsMap = new Map<string, CommentWithChildren>();
   commentsFromDB.rows.forEach((comment) => {
-    commentsMap.set(comment.id, { ...comment });
+    commentsMap.set(comment.id, { ...comment, children: [] });
   });
 
   // Assign each comment to its parent's `children` array
   commentsFromDB.rows.forEach((comment) => {
     if (comment.parent_id !== null) {
-      let parent = commentsMap.get(comment.parent_id);
-      while (parent) {
-        if (!parent.children) {
-          parent.children = [];
-        }
-        parent.children.push(commentsMap.get(comment.id)!);
-        if (parent.parent_id !== null) {
-          parent = commentsMap.get(parent.parent_id);
-        } else {
-          break;
-        }
+      const parent = commentsMap.get(comment.parent_id);
+      if (parent) {
+        parent.children?.push(commentsMap.get(comment.id)!);
       }
     }
   });
 
-  // since we've stored all nested comments within the top-level
-  // comments as children, just return the top-level comments with
-  // their nested children
-  const topLevelComments = Array.from(commentsMap.values()).filter(
-    (comment) => comment.parent_id === null
-  );
+  // Get the top-level comments (i.e., the parent comments for the current page)
+  const topLevelComments = commentsFromDB.rows
+    .filter((comment) => comment.parent_id === null)
+    .map((comment) => commentsMap.get(comment.id)!);
 
   return topLevelComments;
 }
