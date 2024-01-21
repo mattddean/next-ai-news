@@ -16,6 +16,7 @@ type CommentFromDB = {
   created_at: Date;
   updated_at: Date;
   depth: number;
+  level: number;
 };
 
 interface CommentWithChildren extends CommentFromDB {
@@ -51,10 +52,21 @@ async function fetchReplies({
   `);
 }
 
+function groupCommentsByParentId(comments: CommentFromDB[]) {
+  const commentsMap = new Map();
+  comments.forEach((comment) => {
+    if (!commentsMap.has(comment.parent_id)) {
+      commentsMap.set(comment.parent_id, []);
+    }
+    commentsMap.get(comment.parent_id).push(comment);
+  });
+  return commentsMap;
+}
+
 async function getComments({
   storyId,
   author,
-  page = 0,
+  page = 1,
   pageSize = 50,
 }: {
   storyId?: string;
@@ -81,10 +93,10 @@ async function getComments({
         FROM 
           comments
         WHERE 
-          comments.story_id = ${storyId} AND comments.parent_id IS NULL
-    
+          comments.story_id = ${sId} AND comments.parent_id IS NULL
+  
         UNION ALL
-    
+  
         SELECT 
           comments.*,
           path || comments.created_at,
@@ -94,7 +106,7 @@ async function getComments({
         JOIN 
           dfs_comments ON comments.parent_id = dfs_comments.id
         WHERE 
-          level < ${maxReplyDepth}
+          comments.story_id = ${sId} AND level < ${maxReplyDepth}
       )
       SELECT * FROM dfs_comments
       ORDER BY path
@@ -112,28 +124,28 @@ async function getComments({
 
   console.debug("count", comments.length);
 
-  // Create a map of comments by their ID
-  const commentsMap = new Map<string, CommentWithChildren>();
-  comments.forEach((comment) => {
-    commentsMap.set(comment.id, { ...comment, children: [] });
-  });
+  return comments;
 
-  // Assign each comment to its parent's `children` array
-  comments.forEach((comment) => {
-    if (comment.depth !== 0) {
-      if (comment.parent_id) {
-        const parent = commentsMap.get(comment.parent_id);
-        if (parent) {
-          parent.children?.push(commentsMap.get(comment.id)!);
-        }
-      }
-    }
-  });
+  // // Create a map of comments by their ID
+  // const map = new Map<string, CommentWithChildren>();
+  // comments.forEach((comment) => {
+  //   map.set(comment.id, { ...comment, children: [] });
+  // });
 
-  // Get the top-level comments (i.e., the parent comments for the current page)
-  return comments
-    .filter((comment) => comment.parent_id === null)
-    .map((comment) => commentsMap.get(comment.id)!);
+  // // Assign each comment to its parent's `children` array
+  // comments.forEach((comment) => {
+  //   if (comment.depth !== 0) {
+  //     if (comment.parent_id) {
+  //       const parent = map.get(comment.parent_id);
+  //       if (parent) {
+  //         parent.children?.push(map.get(comment.id)!);
+  //       }
+  //     }
+  //   }
+  // });
+
+  // const commentsMap = groupCommentsByParentId(comments);
+  // return commentsMap.get(null);
 }
 
 export async function Comments({
@@ -201,7 +213,7 @@ function CommentItem({
 }) {
   const now = Date.now();
   return (
-    <li>
+    <li style={{ marginLeft: (comment.level - 1) * 30 }}>
       <div className="flex items-start">
         <div className="flex flex-col items-center mr-1 gap-y-1">
           {loggedInUserId === comment.author ? (
@@ -246,13 +258,13 @@ function CommentItem({
               {comment.id} {comment.comment}
             </p>
           </div>
-          {comment.children && (
+          {/* {comment.children && (
             <CommentList
               loggedInUserId={loggedInUserId}
               author={author}
               comments={comment.children}
             />
-          )}
+          )} */}
         </div>
       </div>
     </li>
