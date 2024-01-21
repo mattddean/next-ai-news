@@ -1,14 +1,12 @@
 import { TimeAgo } from "@/components/time-ago";
-import { ReactNode, Suspense } from "react";
+import { ReactNode } from "react";
 import { CommentFromDB } from "./actions";
 
 export function CommentList({
-  author,
   loggedInUserId,
   comments,
   MoreComments,
 }: {
-  author?: string;
   loggedInUserId?: string;
   comments: CommentFromDB[];
   MoreComments: ReactNode;
@@ -21,7 +19,6 @@ export function CommentList({
             key={comment.id}
             i={i}
             loggedInUserId={loggedInUserId}
-            author={author}
             comment={comment}
           />
         ))}
@@ -33,12 +30,10 @@ export function CommentList({
 
 function CommentItem({
   i,
-  author,
   loggedInUserId,
   comment,
 }: {
   i: number;
-  author?: string;
   loggedInUserId?: string;
   comment: CommentFromDB;
 }) {
@@ -74,7 +69,7 @@ function CommentItem({
         <div className="flex flex-col gap-3">
           <div>
             <p className="mb-1 text-sm text-gray-600">
-              {comment.username}{" "}
+              {comment.author_username ?? comment.username}{" "}
               <TimeAgo date={new Date(comment.created_at)} now={now} />{" "}
               <span aria-hidden={true}>|</span>{" "}
               {i > 0 && (

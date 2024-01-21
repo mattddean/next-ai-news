@@ -6,6 +6,8 @@ import {
   genCommentId,
   commentsClosureTable,
   genCommentClosureId,
+  genUserId,
+  usersTable,
 } from "@/app/db";
 import { sql } from "drizzle-orm";
 
@@ -35,12 +37,14 @@ async function insertCommentAndClosureRows({
   parentCommentId,
   createdAt,
   storyId,
+  author,
   comment,
 }: {
   newCommentId: string;
   parentCommentId: string;
   createdAt: Date;
   storyId: string;
+  author: string;
   comment: string;
 }) {
   await db.insert(commentsTable).values({
@@ -49,6 +53,7 @@ async function insertCommentAndClosureRows({
     parent_id: parentCommentId,
     comment: comment,
     created_at: createdAt,
+    author,
   });
   // Insert rows for the ancestors of the parent comment
   const ancestorRows = await db
@@ -76,6 +81,19 @@ async function seedDatabase(): Promise<void> {
   const commentsPerStory = 12;
   const subCommentsPerComment = 5;
   const subSubCommentsPerSubComment = 2;
+  const numUsers = 2;
+
+  const userIds = [];
+  for (let i = 0; i < numUsers; i++) {
+    const userId = genUserId();
+    userIds.push(userId);
+    await db.insert(usersTable).values({
+      id: userId,
+      username: userId,
+      email: userId + "@example.com",
+      password: "password",
+    });
+  }
 
   for (let i = 0; i < numberOfStories; i++) {
     const points = getRandomNumber(0, 500);
@@ -101,6 +119,7 @@ async function seedDatabase(): Promise<void> {
         parent_id: null,
         comment: `Comment ${j + 1} on story ${i + 1}`,
         created_at: commentCreatedAt,
+        author: userIds[getRandomNumber(0, numUsers - 1)],
       });
       await insertCommentClosureSelfRow(commentId);
 
@@ -114,6 +133,7 @@ async function seedDatabase(): Promise<void> {
           newCommentId: subCommentId,
           parentCommentId: commentId,
           storyId,
+          author: userIds[getRandomNumber(0, numUsers - 1)],
         });
 
         for (let l = 0; l < subSubCommentsPerSubComment; l++) {
@@ -128,6 +148,7 @@ async function seedDatabase(): Promise<void> {
             newCommentId: subSubCommentId,
             parentCommentId: subCommentId,
             storyId,
+            author: userIds[getRandomNumber(0, numUsers - 1)],
           });
 
           // await db.execute(sql`

@@ -67,7 +67,8 @@ export type CommentFromDB = {
   id: string;
   story_id: string;
   ancestor_id: string;
-  username: null;
+  author_username: string | null;
+  username: string | null;
   comment: string;
   parent_id: string | null;
   author: null;
@@ -105,8 +106,10 @@ export async function getComments({
         FROM 
           comments
         WHERE 
-          comments.story_id = ${storyId} AND comments.parent_id IS NULL
-  
+          (${sId} <> '' AND comments.story_id = ${sId} AND comments.parent_id IS NULL)
+          OR 
+          (${aId} <> '' AND comments.author = ${aId})
+        
         UNION ALL
   
         SELECT 
@@ -118,12 +121,18 @@ export async function getComments({
         JOIN 
           dfs_comments ON comments.parent_id = dfs_comments.id
       )
-      SELECT * FROM dfs_comments
+      SELECT 
+        dfs_comments.*,
+        users.username AS author_username
+      FROM dfs_comments
+      LEFT JOIN users ON users.id = dfs_comments.author
       ORDER BY path
       OFFSET ${offset}
       LIMIT ${totalCommentsLimit};
     `)
   ).rows;
+
+  console.debug("count", comments.length);
 
   return comments;
 }

@@ -18,8 +18,8 @@ export async function Comments({
 
   console.time(`fetch comments ${storyId} (req: ${rid})`);
   const comments = await getComments({
-    storyId,
-    author,
+    // storyId: storyId,
+    author: "user_8xcDYYj6cKWb",
   });
   console.timeEnd(`fetch comments ${storyId} (req: ${rid})`);
 
@@ -27,7 +27,6 @@ export async function Comments({
     <div>No comments to show</div>
   ) : (
     <CommentList
-      author={author}
       loggedInUserId={session?.user?.id}
       comments={comments}
       MoreComments={
