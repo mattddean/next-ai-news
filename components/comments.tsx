@@ -92,9 +92,9 @@ async function getComments({
     
       SELECT 
         comments.*,
-        comments_closure_direct.depth,
-        comments_closure_direct.ancestor_id,
-        comments_closure_direct.descendant_id,
+        comments_closure.depth,
+        comments_closure.ancestor_id,
+        comments_closure.descendant_id,
         path || comments.created_at,
         level + 1
       FROM 
@@ -103,16 +103,14 @@ async function getComments({
         comments_closure ON comments.id = comments_closure.descendant_id
       JOIN 
         dfs_comments ON comments_closure.ancestor_id = dfs_comments.id
-      JOIN
-        comments_closure AS comments_closure_direct ON comments.id = comments_closure_direct.descendant_id AND comments_closure_direct.depth = 1
       WHERE 
-        level < ${maxReplyDepth}
+        level < ${maxReplyDepth} AND comments_closure.depth = 1
     )
     SELECT * FROM dfs_comments
     ORDER BY path
     OFFSET ${offset}
     LIMIT ${totalCommentsLimit};
-  `)
+    `)
   ).rows;
 
   const parents = comments.filter((comment) => comment.parent_id === null);
