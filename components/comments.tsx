@@ -8,24 +8,25 @@ import type { RowList } from "postgres";
 
 type CommentFromDB = {
   id: string;
+  story_id: string;
+  ancestor_id: string;
+  username: null;
   comment: string;
-  username: string;
-  author: string;
-  created_at: string;
-  parent_id: string | null;
-  ancestors: number[];
-  rn: number;
+  author: null;
+  created_at: Date;
+  updated_at: Date;
+  depth: number;
 };
 
 interface CommentWithChildren extends CommentFromDB {
-  children?: CommentWithChildren[];
+  children: CommentWithChildren[];
 }
 
 async function getComments({
   storyId,
   author,
   page = 1,
-  pageSize = 3,
+  pageSize = 1,
 }: {
   storyId?: string;
   author?: string;
@@ -35,60 +36,65 @@ async function getComments({
   const sId = storyId ?? "";
   const aId = author ?? "";
 
-  const commentsFromDB = (await db.execute(sql`
-    WITH RECURSIVE comment_tree AS (
-      SELECT 
-        comments.id,
-        comments.comment,
-        COALESCE(comments.username, users.username) AS username,
-        comments.author,
-        comments.created_at,
-        comments.parent_id,
-        ARRAY[]::VARCHAR[] AS ancestors,
-        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn,
-        ROW_NUMBER() OVER(ORDER BY comments.created_at DESC) AS row_num
-      FROM 
-        comments
-      LEFT JOIN 
-        users ON users.id = comments.author
-      WHERE 
-        comments.parent_id IS NULL
-        AND (${sId} = '' OR comments.story_id = ${sId})
-        AND (${aId} = '' OR comments.author = ${aId})
-      UNION ALL
-      SELECT 
-        comments.id,
-        comments.comment,
-        COALESCE(comments.username, users.username) AS username,
-        comments.author,
-        comments.created_at,
-        comments.parent_id,
-        comment_tree.ancestors || comments.parent_id,
-        ROW_NUMBER() OVER(PARTITION BY COALESCE(comments.parent_id, comments.id)) AS rn,
-        comment_tree.row_num
-      FROM 
-        comments
-      JOIN 
-        comment_tree ON comments.parent_id = comment_tree.id
-      LEFT JOIN 
-        users ON users.id = comments.author
-    )
-    SELECT * FROM comment_tree
-    WHERE row_num BETWEEN ((${page}::INTEGER - 1) * ${pageSize}::INTEGER + 1) AND (${page}::INTEGER * ${pageSize}::INTEGER)
-  `)) as unknown as { rows: CommentFromDB[] };
+  const offset = page * pageSize;
+  const topLevelLimit = pageSize;
+  const replyLimit = 20; // TODO
+  const maxReplyDepth = 20; // TODO
 
-  console.debug("commentsFromDB", commentsFromDB);
+  // Fetch the top-level comments for the story
+  const topLevelComments = await db.execute<CommentFromDB>(sql`
+    SELECT 
+      comments.*,
+      comments_closure.depth,
+      comments_closure.ancestor_id,
+      comments_closure.descendant_id
+    FROM 
+      comments
+    JOIN 
+      comments_closure ON comments.id = comments_closure.descendant_id
+    WHERE 
+      comments.story_id = ${storyId} AND NOT EXISTS (
+        SELECT 1 FROM comments_closure cc2
+        WHERE cc2.descendant_id = comments.id AND cc2.depth > 0
+      )    
+    ORDER BY 
+      comments.created_at
+    LIMIT ${topLevelLimit} OFFSET ${offset};
+  `);
+
+  // For each top-level comment, fetch a certain number of replies
+  const comments = [];
+  for (const comment of topLevelComments.rows) {
+    const replies = await db.execute<CommentFromDB>(sql`
+    SELECT 
+      comments.*,
+      comments_closure_direct.depth,
+      comments_closure_direct.ancestor_id,
+      comments_closure_direct.descendant_id
+    FROM 
+      comments
+    JOIN 
+      comments_closure ON comments.id = comments_closure.descendant_id
+    JOIN 
+      comments_closure AS comments_closure_direct ON comments.id = comments_closure_direct.descendant_id AND comments_closure_direct.depth = 1
+    WHERE 
+      comments_closure.ancestor_id = ${comment.id} AND comments_closure.depth <= ${maxReplyDepth} AND comments_closure.depth > 0
+    ORDER BY 
+      comments_closure.depth, comments.created_at;
+    `);
+    comments.push(comment, ...replies.rows);
+  }
 
   // Create a map of comments by their ID
   const commentsMap = new Map<string, CommentWithChildren>();
-  commentsFromDB.rows.forEach((comment) => {
+  comments.forEach((comment) => {
     commentsMap.set(comment.id, { ...comment, children: [] });
   });
 
   // Assign each comment to its parent's `children` array
-  commentsFromDB.rows.forEach((comment) => {
-    if (comment.parent_id !== null) {
-      const parent = commentsMap.get(comment.parent_id);
+  comments.forEach((comment) => {
+    if (comment.depth !== 0) {
+      const parent = commentsMap.get(comment.ancestor_id);
       if (parent) {
         parent.children?.push(commentsMap.get(comment.id)!);
       }
@@ -96,11 +102,9 @@ async function getComments({
   });
 
   // Get the top-level comments (i.e., the parent comments for the current page)
-  const topLevelComments = commentsFromDB.rows
-    .filter((comment) => comment.parent_id === null)
+  return comments
+    .filter((comment) => comment.depth === 0)
     .map((comment) => commentsMap.get(comment.id)!);
-
-  return topLevelComments;
 }
 
 export async function Comments({

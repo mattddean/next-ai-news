@@ -1,5 +1,5 @@
-import { neon, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import {
   pgTable,
   text,
@@ -8,10 +8,13 @@ import {
   varchar,
   timestamp,
   AnyPgColumn,
+  unique,
 } from "drizzle-orm/pg-core";
 import { customAlphabet } from "nanoid";
 import { nolookalikes } from "nanoid-dictionary";
 import { sql } from "drizzle-orm";
+import ws from "ws";
+// import { Pool } from "pg";
 
 // init nanoid
 const nanoid = customAlphabet(nolookalikes, 12);
@@ -22,13 +25,46 @@ if (!process.env.POSTGRES_URL) {
 
 neonConfig.fetchConnectionCache = true;
 
-export const db = drizzle(
-  neon(process.env.POSTGRES_URL, {
-    fetchOptions: {
-      cache: "no-store",
-    },
-  })
-);
+if (process.env.VERCEL_ENV !== "production") {
+  neonConfig.webSocketConstructor = ws;
+  console.debug("running local mode");
+  // Set the WebSocket proxy to work with the local instance
+  neonConfig.wsProxy = (host) => {
+    console.log("host", host);
+    return `${host}:5433/v1`;
+  };
+  // Disable all authentication and encryption
+  neonConfig.useSecureWebSocket = false;
+  neonConfig.pipelineTLS = false;
+  neonConfig.pipelineConnect = false;
+  neonConfig.fetchEndpoint = (host) => {
+    console.debug("fetch host", host);
+    return "http://" + host + ":5433";
+  };
+  // neonConfig.fetchEndpoint = (host) =>
+  //   `https://${host}:${host === "db.localtest.me" ? 4444 : 443}/sql`;
+}
+
+// let db;
+// if (process.env.NODE_ENV === "development") {
+//   const client = new Pool({
+//     connectionString: process.env.POSTGRES_URL,
+//   });
+//   await client.connect();
+//   db = pgDrizzle(client);
+// } else {
+//   db = neonDrizzle(
+//     neon(process.env.POSTGRES_URL, {
+//       fetchOptions: {
+//         cache: "no-store",
+//       },
+//     })
+//   );
+// }
+// export { db };
+
+const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
+export const db = drizzle(pool);
 
 export const usersTable = pgTable(
   "users",
@@ -110,4 +146,27 @@ export const commentsTable = pgTable(
 
 export const genCommentId = () => {
   return `comment_${nanoid(12)}`;
+};
+
+export const commentsClosureTable = pgTable(
+  "comments_closure",
+  {
+    id: varchar("id", { length: 256 }).primaryKey().notNull(),
+    ancestor_id: varchar("ancestor_id", { length: 256 })
+      .notNull()
+      .references(() => commentsTable.id),
+    descendant_id: varchar("descendant_id", { length: 256 })
+      .notNull()
+      .references(() => commentsTable.id),
+    depth: integer("depth").notNull(),
+  },
+  (t) => ({
+    cc_ancestor_id_descendant_id_idx: unique(
+      "cc_ancestor_id_descendant_id_idx"
+    ).on(t.ancestor_id, t.descendant_id),
+  })
+);
+
+export const genCommentClosureId = () => {
+  return `cc_${nanoid(12)}`;
 };
