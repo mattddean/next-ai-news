@@ -4,7 +4,6 @@ import { headers } from "next/headers";
 import { auth } from "@/app/auth";
 import { nanoid } from "nanoid";
 import { TimeAgo } from "@/components/time-ago";
-import type { RowList } from "postgres";
 
 type CommentFromDB = {
   id: string;
@@ -12,6 +11,7 @@ type CommentFromDB = {
   ancestor_id: string;
   username: null;
   comment: string;
+  parent_id: string | null;
   author: null;
   created_at: Date;
   updated_at: Date;
@@ -22,11 +22,40 @@ interface CommentWithChildren extends CommentFromDB {
   children: CommentWithChildren[];
 }
 
+async function fetchReplies({
+  commentId,
+  maxReplyDepth,
+  limit,
+}: {
+  commentId: string;
+  maxReplyDepth: number;
+  limit: number;
+}) {
+  return await db.execute<CommentFromDB>(sql`
+    SELECT 
+      comments.*,
+      comments_closure_direct.depth,
+      comments_closure_direct.ancestor_id,
+      comments_closure_direct.descendant_id
+    FROM 
+      comments
+    JOIN 
+      comments_closure ON comments.id = comments_closure.descendant_id
+    JOIN 
+      comments_closure AS comments_closure_direct ON comments.id = comments_closure_direct.descendant_id AND comments_closure_direct.depth = 1
+    WHERE 
+      comments_closure.ancestor_id = ${commentId} AND comments_closure.depth <= ${maxReplyDepth} AND comments_closure.depth > 0
+    ORDER BY 
+      comments_closure.depth, comments.created_at
+    LIMIT ${limit};
+  `);
+}
+
 async function getComments({
   storyId,
   author,
-  page = 1,
-  pageSize = 1,
+  page = 0,
+  pageSize = 50,
 }: {
   storyId?: string;
   author?: string;
@@ -42,30 +71,8 @@ async function getComments({
   const maxReplyDepth = 20; // TODO
 
   // Fetch the top-level comments for the story
-  const topLevelComments = await db.execute<CommentFromDB>(sql`
-    SELECT 
-      comments.*,
-      comments_closure.depth,
-      comments_closure.ancestor_id,
-      comments_closure.descendant_id
-    FROM 
-      comments
-    JOIN 
-      comments_closure ON comments.id = comments_closure.descendant_id
-    WHERE 
-      comments.story_id = ${storyId} AND NOT EXISTS (
-        SELECT 1 FROM comments_closure cc2
-        WHERE cc2.descendant_id = comments.id AND cc2.depth > 0
-      )    
-    ORDER BY 
-      comments.created_at
-    LIMIT ${topLevelLimit} OFFSET ${offset};
-  `);
-
-  // For each top-level comment, fetch a certain number of replies
-  const comments = [];
-  for (const comment of topLevelComments.rows) {
-    const replies = await db.execute<CommentFromDB>(sql`
+  const comments = (
+    await db.execute<CommentFromDB>(sql`
     SELECT 
       comments.*,
       comments_closure_direct.depth,
@@ -75,15 +82,25 @@ async function getComments({
       comments
     JOIN 
       comments_closure ON comments.id = comments_closure.descendant_id
-    JOIN 
+    LEFT JOIN 
       comments_closure AS comments_closure_direct ON comments.id = comments_closure_direct.descendant_id AND comments_closure_direct.depth = 1
     WHERE 
-      comments_closure.ancestor_id = ${comment.id} AND comments_closure.depth <= ${maxReplyDepth} AND comments_closure.depth > 0
+      comments.story_id = ${storyId} AND comments_closure.depth <= ${maxReplyDepth}
     ORDER BY 
-      comments_closure.depth, comments.created_at;
-    `);
-    comments.push(comment, ...replies.rows);
-  }
+      comments_closure.depth, comments.created_at desc
+    OFFSET ${offset}
+    LIMIT ${topLevelLimit};
+  `)
+  ).rows;
+
+  const parents = comments.filter((comment) => comment.depth === null);
+  console.debug("parents", parents);
+
+  const children = comments.filter((comment) => comment.depth !== null);
+
+  console.debug("children", children);
+
+  console.debug("count", comments.length);
 
   // Create a map of comments by their ID
   const commentsMap = new Map<string, CommentWithChildren>();
@@ -103,7 +120,7 @@ async function getComments({
 
   // Get the top-level comments (i.e., the parent comments for the current page)
   return comments
-    .filter((comment) => comment.depth === 0)
+    .filter((comment) => comment.depth === null)
     .map((comment) => commentsMap.get(comment.id)!);
 }
 
