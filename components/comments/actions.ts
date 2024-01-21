@@ -95,7 +95,14 @@ export async function getComments({
   const offset = page * pageSize;
   const totalCommentsLimit = pageSize;
 
-  // Fetch the top-level comments for the story
+  // fetch comments by story or author. if both
+  // are provided, only fetch by story. use
+  // max_level_comments to avoid fetching duplicate
+  // comments when querying by author.
+  // TODO: as a performance optimization, consider
+  // using two distinct queries: one for story and
+  // one for author, including the max_level_comments
+  // part only for the author query.
   const comments = (
     await db.execute<CommentFromDB>(sql`
       WITH RECURSIVE dfs_comments AS (
@@ -138,6 +145,7 @@ export async function getComments({
       LEFT JOIN users ON users.id = dfs_comments.author
       ORDER BY path
       OFFSET ${offset}
+      LIMIT ${totalCommentsLimit};
     `)
   ).rows;
 
