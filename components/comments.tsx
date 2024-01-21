@@ -73,43 +73,33 @@ async function getComments({
   // Fetch the top-level comments for the story
   const comments = (
     await db.execute<CommentFromDB>(sql`
-    WITH RECURSIVE dfs_comments AS (
-      SELECT 
-        comments.*,
-        comments_closure.depth,
-        comments_closure.ancestor_id,
-        comments_closure.descendant_id,
-        ARRAY[comments.created_at] AS path,
-        1 AS level
-      FROM 
-        comments
-      JOIN 
-        comments_closure ON comments.id = comments_closure.descendant_id
-      WHERE 
-        comments.story_id = ${storyId} AND parent_id IS NULL
+      WITH RECURSIVE dfs_comments AS (
+        SELECT 
+          comments.*,
+          ARRAY[comments.created_at] AS path,
+          1 AS level
+        FROM 
+          comments
+        WHERE 
+          comments.story_id = ${storyId} AND comments.parent_id IS NULL
     
-      UNION ALL
+        UNION ALL
     
-      SELECT 
-        comments.*,
-        comments_closure.depth,
-        comments_closure.ancestor_id,
-        comments_closure.descendant_id,
-        path || comments.created_at,
-        level + 1
-      FROM 
-        comments
-      JOIN 
-        comments_closure ON comments.id = comments_closure.descendant_id
-      JOIN 
-        dfs_comments ON comments_closure.ancestor_id = dfs_comments.id
-      WHERE 
-        level < ${maxReplyDepth} AND comments_closure.depth = 1
-    )
-    SELECT * FROM dfs_comments
-    ORDER BY path
-    OFFSET ${offset}
-    LIMIT ${totalCommentsLimit};
+        SELECT 
+          comments.*,
+          path || comments.created_at,
+          level + 1
+        FROM 
+          comments
+        JOIN 
+          dfs_comments ON comments.parent_id = dfs_comments.id
+        WHERE 
+          level < ${maxReplyDepth}
+      )
+      SELECT * FROM dfs_comments
+      ORDER BY path
+      OFFSET ${offset}
+      LIMIT ${totalCommentsLimit};
     `)
   ).rows;
 
@@ -131,9 +121,11 @@ async function getComments({
   // Assign each comment to its parent's `children` array
   comments.forEach((comment) => {
     if (comment.depth !== 0) {
-      const parent = commentsMap.get(comment.ancestor_id);
-      if (parent) {
-        parent.children?.push(commentsMap.get(comment.id)!);
+      if (comment.parent_id) {
+        const parent = commentsMap.get(comment.parent_id);
+        if (parent) {
+          parent.children?.push(commentsMap.get(comment.id)!);
+        }
       }
     }
   });
