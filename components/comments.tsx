@@ -66,37 +66,59 @@ async function getComments({
   const aId = author ?? "";
 
   const offset = page * pageSize;
-  const topLevelLimit = pageSize;
+  const totalCommentsLimit = pageSize;
   const replyLimit = 20; // TODO
   const maxReplyDepth = 20; // TODO
 
   // Fetch the top-level comments for the story
   const comments = (
     await db.execute<CommentFromDB>(sql`
-    SELECT 
-      comments.*,
-      comments_closure_direct.depth,
-      comments_closure_direct.ancestor_id,
-      comments_closure_direct.descendant_id
-    FROM 
-      comments
-    JOIN 
-      comments_closure ON comments.id = comments_closure.descendant_id
-    LEFT JOIN 
-      comments_closure AS comments_closure_direct ON comments.id = comments_closure_direct.descendant_id AND comments_closure_direct.depth = 1
-    WHERE 
-      comments.story_id = ${storyId} AND comments_closure.depth <= ${maxReplyDepth}
-    ORDER BY 
-      comments_closure.depth, comments.created_at desc
+    WITH RECURSIVE dfs_comments AS (
+      SELECT 
+        comments.*,
+        comments_closure.depth,
+        comments_closure.ancestor_id,
+        comments_closure.descendant_id,
+        ARRAY[comments.created_at] AS path,
+        1 AS level
+      FROM 
+        comments
+      JOIN 
+        comments_closure ON comments.id = comments_closure.descendant_id
+      WHERE 
+        comments.story_id = ${storyId} AND parent_id IS NULL
+    
+      UNION ALL
+    
+      SELECT 
+        comments.*,
+        comments_closure_direct.depth,
+        comments_closure_direct.ancestor_id,
+        comments_closure_direct.descendant_id,
+        path || comments.created_at,
+        level + 1
+      FROM 
+        comments
+      JOIN 
+        comments_closure ON comments.id = comments_closure.descendant_id
+      JOIN 
+        dfs_comments ON comments_closure.ancestor_id = dfs_comments.id
+      JOIN
+        comments_closure AS comments_closure_direct ON comments.id = comments_closure_direct.descendant_id AND comments_closure_direct.depth = 1
+      WHERE 
+        level < ${maxReplyDepth}
+    )
+    SELECT * FROM dfs_comments
+    ORDER BY path
     OFFSET ${offset}
-    LIMIT ${topLevelLimit};
+    LIMIT ${totalCommentsLimit};
   `)
   ).rows;
 
-  const parents = comments.filter((comment) => comment.depth === null);
+  const parents = comments.filter((comment) => comment.parent_id === null);
   console.debug("parents", parents);
 
-  const children = comments.filter((comment) => comment.depth !== null);
+  const children = comments.filter((comment) => comment.parent_id !== null);
 
   console.debug("children", children);
 
@@ -120,7 +142,7 @@ async function getComments({
 
   // Get the top-level comments (i.e., the parent comments for the current page)
   return comments
-    .filter((comment) => comment.depth === null)
+    .filter((comment) => comment.parent_id === null)
     .map((comment) => commentsMap.get(comment.id)!);
 }
 
@@ -230,7 +252,9 @@ function CommentItem({
               )}
               <span title="Unimplemented">next</span>
             </p>
-            <p className="mb-1">{comment.comment}</p>
+            <p className="mb-1">
+              {comment.id} {comment.comment}
+            </p>
           </div>
           {comment.children && (
             <CommentList
