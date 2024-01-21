@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { nanoid } from "nanoid";
 import { sql } from "drizzle-orm";
 import { Suspense } from "react";
-import { Comments } from "@/components/comments";
+import { Comments } from "@/components/comments/comments";
 import { ReplyForm } from "./reply-form";
 import Link from "next/link";
 

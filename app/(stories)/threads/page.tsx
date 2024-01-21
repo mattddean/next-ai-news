@@ -1,4 +1,4 @@
-import { Comments } from "@/components/comments";
+import { Comments } from "@/components/comments/comments";
 import { auth } from "@/app/auth";
 import { redirect } from "next/navigation";
 
