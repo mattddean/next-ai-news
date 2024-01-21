@@ -5,11 +5,9 @@ import { CommentFromDB } from "./actions";
 export function CommentList({
   loggedInUserId,
   comments,
-  MoreComments,
 }: {
   loggedInUserId?: string;
   comments: CommentFromDB[];
-  MoreComments: ReactNode;
 }) {
   return (
     <>
@@ -23,7 +21,6 @@ export function CommentList({
           />
         ))}
       </ul>
-      <div className="mt-4 ml-7">{MoreComments}</div>
     </>
   );
 }
@@ -39,7 +36,7 @@ function CommentItem({
 }) {
   const now = Date.now();
   return (
-    <li style={{ marginLeft: (comment.level - 1) * 30 }}>
+    <li style={{ marginLeft: (comment.level - 1) * 15 }}>
       <div className="flex items-start">
         <div className="flex flex-col items-center mr-1 gap-y-1">
           {loggedInUserId === comment.author ? (

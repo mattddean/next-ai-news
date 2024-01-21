@@ -17,9 +17,19 @@ export function MoreCommentsForm({
   const [state, formAction] = useFormState(getMoreCommentsAction, {});
 
   return (
-    <form action={formAction} className="max-w-2xl">
-      <MoreCommentsFormFields {...state} page={page} storyId={storyId} />
-    </form>
+    <>
+      <form action={formAction} className="max-w-2xl">
+        <MoreCommentsFormFields {...state} page={page} storyId={storyId} />
+      </form>
+
+      {state.comments && (
+        <MoreCommentsForm
+          page={page + 1}
+          storyId={storyId}
+          authorId={authorId}
+        />
+      )}
+    </>
   );
 }
 
@@ -40,18 +50,7 @@ export function MoreCommentsFormFields({
 
   if (comments) {
     console.debug("did get comments");
-    return (
-      <CommentList
-        comments={comments}
-        MoreComments={
-          <MoreCommentsForm
-            page={page + 1}
-            storyId={storyId}
-            authorId={authorId}
-          />
-        }
-      />
-    );
+    return <CommentList comments={comments} />;
   }
 
   console.debug("error", error);

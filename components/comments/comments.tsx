@@ -18,22 +18,19 @@ export async function Comments({
 
   console.time(`fetch comments ${storyId} (req: ${rid})`);
   const comments = await getComments({
-    // storyId: storyId,
-    author: "user_8xcDYYj6cKWb",
+    storyId,
+    author,
   });
   console.timeEnd(`fetch comments ${storyId} (req: ${rid})`);
 
   return comments.length === 0 ? (
     <div>No comments to show</div>
   ) : (
-    <CommentList
-      loggedInUserId={session?.user?.id}
-      comments={comments}
-      MoreComments={
-        <Suspense fallback={null}>
-          <MoreCommentsForm page={1} storyId={storyId} />
-        </Suspense>
-      }
-    />
+    <div className="flex flex-col gap-3">
+      <CommentList loggedInUserId={session?.user?.id} comments={comments} />
+      <Suspense fallback={null}>
+        <MoreCommentsForm page={1} storyId={storyId} />
+      </Suspense>
+    </div>
   );
 }
