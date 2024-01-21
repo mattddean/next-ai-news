@@ -111,7 +111,7 @@ export async function getComments({
           (${aId} <> '' AND comments.author = ${aId})
         
         UNION ALL
-  
+
         SELECT 
           comments.*,
           path || comments.created_at,
@@ -120,19 +120,26 @@ export async function getComments({
           comments
         JOIN 
           dfs_comments ON comments.parent_id = dfs_comments.id
+      ),
+      max_level_comments AS (
+        SELECT 
+          id, 
+          MAX(level) as max_level
+        FROM 
+          dfs_comments
+        GROUP BY 
+          id
       )
       SELECT 
         dfs_comments.*,
         users.username AS author_username
       FROM dfs_comments
+      JOIN max_level_comments ON dfs_comments.id = max_level_comments.id AND dfs_comments.level = max_level_comments.max_level
       LEFT JOIN users ON users.id = dfs_comments.author
       ORDER BY path
       OFFSET ${offset}
-      LIMIT ${totalCommentsLimit};
     `)
   ).rows;
-
-  console.debug("count", comments.length);
 
   return comments;
 }

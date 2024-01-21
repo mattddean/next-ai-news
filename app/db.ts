@@ -141,6 +141,7 @@ export const commentsTable = pgTable(
     created_at_idx: index("c_created_at_idx").on(t.created_at),
     story_id_idx: index("c_story_id_idx").on(t.story_id),
     author_idx: index("c_author_idx").on(t.author),
+    parent_id_idx: index("c_parent_id_idx").on(t.parent_id),
   })
 );
 
