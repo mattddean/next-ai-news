@@ -14,15 +14,19 @@ export function MoreCommentsForm({
   storyId?: string;
   authorId?: string;
 }) {
-  const [state, formAction] = useFormState(getMoreCommentsAction, {});
+  const [state, formAction] = useFormState(getMoreCommentsAction, undefined);
 
   return (
     <>
-      <form action={formAction} className="max-w-2xl">
-        <MoreCommentsFormFields {...state} page={page} storyId={storyId} />
-      </form>
+      {state?.data && <CommentList comments={state.data.comments} />}
 
-      {state.comments && (
+      {(!state || state.error) && (
+        <form action={formAction} className="max-w-2xl">
+          <MoreCommentsFormFields {...state} page={page} storyId={storyId} />
+        </form>
+      )}
+
+      {state?.data?.hasMore && (
         <MoreCommentsForm
           page={page + 1}
           storyId={storyId}
@@ -33,8 +37,8 @@ export function MoreCommentsForm({
   );
 }
 
-export function MoreCommentsFormFields({
-  comments,
+function MoreCommentsFormFields({
+  data,
   error,
   storyId,
   authorId,
@@ -46,35 +50,18 @@ export function MoreCommentsFormFields({
 }) {
   const { pending } = useFormStatus();
 
-  console.debug("pending", pending);
-
-  if (comments) {
-    console.debug("did get comments");
-    return <CommentList comments={comments} />;
-  }
-
-  console.debug("error", error);
-
   return (
     <div className="space-y-4 py-1">
       <input type="hidden" name="storyId" value={storyId} />
       <input type="hidden" name="authorId" value={authorId} />
       <input type="hidden" name="page" value={page} />
-      <div className="flex flex-col flex-grow sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 items-start md:items-center">
-        <label
-          className="block text-sm font-medium text-gray-700 md:w-16 md:text-right"
-          htmlFor="title"
-        >
-          Title
-        </label>
-        <button
-          className="text-md hover:underline text-[#666] md:text-gray-500"
-          disabled={pending}
-          type="submit"
-        >
-          More
-        </button>
-      </div>
+      <button
+        className="text-md hover:underline text-[#666] md:text-gray-500"
+        disabled={pending}
+        type="submit"
+      >
+        More (for page ${page})
+      </button>
       {!pending &&
       error &&
       "fieldErrors" in error &&

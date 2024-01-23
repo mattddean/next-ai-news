@@ -27,22 +27,14 @@ neonConfig.fetchConnectionCache = true;
 
 if (process.env.VERCEL_ENV !== "production") {
   neonConfig.webSocketConstructor = ws;
-  console.debug("running local mode");
   // Set the WebSocket proxy to work with the local instance
   neonConfig.wsProxy = (host) => {
-    console.log("host", host);
     return `${host}:5433/v1`;
   };
   // Disable all authentication and encryption
   neonConfig.useSecureWebSocket = false;
   neonConfig.pipelineTLS = false;
   neonConfig.pipelineConnect = false;
-  neonConfig.fetchEndpoint = (host) => {
-    console.debug("fetch host", host);
-    return "http://" + host + ":5433";
-  };
-  // neonConfig.fetchEndpoint = (host) =>
-  //   `https://${host}:${host === "db.localtest.me" ? 4444 : 443}/sql`;
 }
 
 // let db;

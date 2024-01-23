@@ -16,7 +16,7 @@ export default async function Threads({
   return (
     <div>
       <Comments
-        author={searchParams.new ? undefined : (await auth())?.user?.id}
+        authorId={searchParams.new ? undefined : (await auth())?.user?.id}
       />
     </div>
   );

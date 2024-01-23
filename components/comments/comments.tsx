@@ -1,17 +1,17 @@
 import { headers } from "next/headers";
 import { auth } from "@/app/auth";
 import { nanoid } from "nanoid";
-import { getComments } from "./actions";
+import { getComments, hasMoreComments } from "./queries";
 import { CommentList } from "./list";
 import { MoreCommentsForm } from "./more-form";
 import { Suspense } from "react";
 
 export async function Comments({
   storyId,
-  author,
+  authorId,
 }: {
   storyId?: string;
-  author?: string;
+  authorId?: string;
 }) {
   const session = await auth();
   const rid = headers().get("x-vercel-id") ?? nanoid();
@@ -19,7 +19,8 @@ export async function Comments({
   console.time(`fetch comments ${storyId} (req: ${rid})`);
   const comments = await getComments({
     storyId,
-    author,
+    authorId,
+    page: 1,
   });
   console.timeEnd(`fetch comments ${storyId} (req: ${rid})`);
 
@@ -29,8 +30,28 @@ export async function Comments({
     <div className="flex flex-col gap-3">
       <CommentList loggedInUserId={session?.user?.id} comments={comments} />
       <Suspense fallback={null}>
-        <MoreCommentsForm page={1} storyId={storyId} />
+        <MoreComments storyId={storyId} authorId={authorId} />
       </Suspense>
     </div>
   );
+}
+
+async function MoreComments({
+  storyId,
+  authorId,
+}: {
+  storyId?: string;
+  authorId?: string;
+}) {
+  const hasMore = await hasMoreComments({
+    storyId,
+    authorId,
+    page: 2,
+  });
+
+  if (!hasMore) {
+    return null;
+  }
+
+  return <MoreCommentsForm page={2} storyId={storyId} />;
 }

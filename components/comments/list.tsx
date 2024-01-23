@@ -1,6 +1,5 @@
 import { TimeAgo } from "@/components/time-ago";
-import { ReactNode } from "react";
-import { CommentFromDB } from "./actions";
+import type { CommentFromDB } from "./queries";
 
 export function CommentList({
   loggedInUserId,
