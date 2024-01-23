@@ -22,6 +22,7 @@ export async function Comments({
     authorId,
     page: 1,
   });
+  console.debug("comment date", comments[0]?.created_at);
   console.timeEnd(`fetch comments ${storyId} (req: ${rid})`);
 
   return comments.length === 0 ? (

@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { getComments, hasMoreComments, type CommentFromDB } from "./queries";
+import { getComments, hasMoreComments, type Comment } from "./queries";
 
 const GetMoreCommentsActionSchema = z.object({
   page: z.preprocess((val) => Number(val), z.number().positive()),
@@ -22,7 +22,7 @@ export type GetMoreCommentsActionData = {
         };
       };
   data?: {
-    comments: CommentFromDB[];
+    comments: Comment[];
     hasMore: boolean;
   };
 };

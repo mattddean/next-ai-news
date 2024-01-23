@@ -1,12 +1,12 @@
 import { TimeAgo } from "@/components/time-ago";
-import type { CommentFromDB } from "./queries";
+import type { Comment } from "./queries";
 
 export function CommentList({
   loggedInUserId,
   comments,
 }: {
   loggedInUserId?: string;
-  comments: CommentFromDB[];
+  comments: Comment[];
 }) {
   return (
     <>
@@ -31,7 +31,7 @@ function CommentItem({
 }: {
   i: number;
   loggedInUserId?: string;
-  comment: CommentFromDB;
+  comment: Comment;
 }) {
   const now = Date.now();
   return (

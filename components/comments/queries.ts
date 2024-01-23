@@ -1,22 +1,7 @@
-import { commentsTable, db } from "@/app/db";
-import { sql, count } from "drizzle-orm";
+import { commentsTable, db, usersTable } from "@/app/db";
+import { sql } from "drizzle-orm";
 
 const PER_PAGE = 50;
-
-export type CommentFromDB = {
-  id: string;
-  story_id: string;
-  ancestor_id: string;
-  author_username: string | null;
-  username: string | null;
-  comment: string;
-  parent_id: string | null;
-  author: null;
-  created_at: Date;
-  updated_at: Date;
-  depth: number;
-  level: number;
-};
 
 export async function getComments({
   storyId,
@@ -38,54 +23,61 @@ export async function getComments({
   // using two distinct queries: one for story and
   // one for author, including the max_level_comments
   // part only for the author query.
-  const comments = (
-    await db.execute<CommentFromDB>(sql`
-      WITH RECURSIVE dfs_comments AS (
-        SELECT 
-          comments.*,
-          ARRAY[comments.created_at] AS path,
-          1 AS level
-        FROM 
-          comments
-        WHERE 
-          (${sId} <> '' AND comments.story_id = ${sId} AND comments.parent_id IS NULL)
-          OR 
-          (${aId} <> '' AND comments.author = ${aId})
-        
-        UNION ALL
-
-        SELECT 
-          comments.*,
-          path || comments.created_at,
-          level + 1
-        FROM 
-          comments
-        JOIN 
-          dfs_comments ON comments.parent_id = dfs_comments.id
-      ),
-      max_level_comments AS (
-        SELECT 
-          id, 
-          MAX(level) as max_level
-        FROM 
-          dfs_comments
-        GROUP BY 
-          id
-      )
+  // Define the recursive part of the query using raw SQL
+  const recursivePart = sql`
+    WITH RECURSIVE dfs_comments AS (
       SELECT 
-        dfs_comments.*,
-        users.username AS author_username
-      FROM dfs_comments
-      JOIN max_level_comments ON dfs_comments.id = max_level_comments.id AND dfs_comments.level = max_level_comments.max_level
-      LEFT JOIN users ON users.id = dfs_comments.author
-      ORDER BY path
-      OFFSET ${(page - 1) * PER_PAGE}
-      LIMIT ${PER_PAGE};
-    `)
-  ).rows;
+        comments.*,
+        ARRAY[comments.created_at] AS path,
+        1 AS level
+      FROM 
+        comments
+      WHERE 
+        (${sId} <> '' AND comments.story_id = ${sId} AND comments.parent_id IS NULL)
+        OR 
+        (${aId} <> '' AND comments.author = ${aId})
+      
+      UNION ALL
 
-  return comments;
+      SELECT 
+        comments.*,
+        path || comments.created_at,
+        level + 1
+      FROM 
+        comments
+      JOIN 
+        dfs_comments ON comments.parent_id = dfs_comments.id
+    )`;
+
+  // Continue building the rest of the query using Drizzle ORM
+  const result = db
+    .select({
+      id: sql<string>`dfs_comments.id`,
+      story_id: sql<string>`dfs_comments.story_id`,
+      ancestor_id: sql<string>`dfs_comments.ancestor_id`,
+      username: sql<string>`dfs_comments.author_username`,
+      author_username: usersTable.username,
+      comment: sql<string>`dfs_comments.comment`,
+      parent_id: sql<string>`dfs_comments.parent_id`,
+      author: sql<string>`dfs_comments.author`,
+      created_at: sql<Date>`dfs_comments.created_at`,
+      updated_at: sql<Date>`dfs_comments.updated_at`,
+      level: sql<number>`dfs_comments.level`,
+    })
+    .from(recursivePart) // Use the raw SQL as part of the query
+    .innerJoin(
+      sql`max_level_comments`,
+      sql`dfs_comments.id = max_level_comments.id`
+    )
+    .where(sql`dfs_comments.level = max_level_comments.max_level`)
+    .leftJoin(usersTable, sql`${usersTable.id} = dfs_comments.author`)
+    .orderBy(sql`path`)
+    .offset((page - 1) * PER_PAGE)
+    .limit(PER_PAGE);
+
+  return result;
 }
+export type Comment = Awaited<ReturnType<typeof getComments>>[number];
 
 export async function hasMoreComments({
   storyId,
