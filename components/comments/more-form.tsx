@@ -60,7 +60,7 @@ function MoreCommentsFormFields({
         disabled={pending}
         type="submit"
       >
-        More (for page ${page})
+        More <span className="md:hidden">results</span>
       </button>
       {!pending &&
       error &&

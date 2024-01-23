@@ -23,7 +23,10 @@ export async function getComments({
   // using two distinct queries: one for story and
   // one for author, including the max_level_comments
   // part only for the author query.
-  const withThing = sql`
+  // TODO: use $withRecursive once it drops:
+  // https://github.com/drizzle-team/drizzle-orm/pull/1405
+  // TODO: generate the inner part of WITH RECURSIVE using drizzle
+  const query = sql`
     WITH RECURSIVE dfs_comments AS (
       SELECT
         comments.*,
@@ -46,33 +49,34 @@ export async function getComments({
         comments
       JOIN
         dfs_comments ON comments.parent_id = dfs_comments.id
-    ), `
-    .append(sql`max_level_comments AS (`)
+    )`
+    .append(sql`,max_level_comments AS (`)
     .append(
       db
         .select({
-          id: sql`id`,
+          id: sql`id`.as("id"),
           max_level: sql`MAX(level)`.as("max_level"),
         })
         .from(sql`dfs_comments`)
         .groupBy(sql`id`)
         .getSQL()
     )
-    .append(sql`) `)
+    .append(sql`)`)
     .append(
       db
         .select({
-          id: sql<string>`dfs_comments.id`,
-          story_id: sql<string>`dfs_comments.story_id`,
-          // ancestor_id: sql<string>`dfs_comments.ancestor_id`,
-          username: sql<string>`dfs_comments.username`,
-          author_username: usersTable.username,
-          comment: sql<string>`dfs_comments.comment`,
-          parent_id: sql<string>`dfs_comments.parent_id`,
-          author: sql<string>`dfs_comments.author`,
-          created_at: sql<string>`dfs_comments.created_at`,
-          updated_at: sql<string>`dfs_comments.updated_at`,
-          level: sql<number>`dfs_comments.level`,
+          id: sql<Comment["id"]>`dfs_comments.id`,
+          story_id: sql<Comment["story_id"]>`dfs_comments.story_id`,
+          author_username: sql<
+            Comment["author_username"]
+          >`${usersTable.username}`.as("author_username"),
+          username: sql<Comment["username"]>`dfs_comments.username`,
+          comment: sql<Comment["comment"]>`dfs_comments.comment`,
+          parent_id: sql<Comment["parent_id"]>`dfs_comments.parent_id`,
+          author: sql<Comment["author"]>`dfs_comments.author`,
+          created_at: sql<Comment["created_at"]>`dfs_comments.created_at`,
+          updated_at: sql<Comment["updated_at"]>`dfs_comments.updated_at`,
+          level: sql<Comment["level"]>`dfs_comments.level`,
         })
         .from(sql`dfs_comments`)
         .innerJoin(
@@ -87,17 +91,12 @@ export async function getComments({
         .getSQL()
     );
 
-  const result = await db.execute(withThing);
+  const rows = (await db.execute<Comment>(query)).rows;
 
-  // console.debug("result", result.rows);
-
-  const row1 = result.rows[0];
-  console.debug("created at", typeof row1.created_at);
-
-  return result.rows;
+  return rows;
 }
 
-// TODO: infer this
+// TODO: can we infer this?
 export type Comment = {
   id: string;
   story_id: string;
