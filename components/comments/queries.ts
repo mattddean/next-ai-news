@@ -1,5 +1,6 @@
 import { commentsTable, db, usersTable } from "@/app/db";
-import { max, sql } from "drizzle-orm";
+import { and, sql } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/pg-core";
 
 const PER_PAGE = 50;
 
@@ -26,31 +27,53 @@ export async function getComments({
   // TODO: use $withRecursive once it drops:
   // https://github.com/drizzle-team/drizzle-orm/pull/1405
   // TODO: generate the inner part of WITH RECURSIVE using drizzle
-  const query = sql`
-    WITH RECURSIVE dfs_comments AS (
-      SELECT
-        comments.*,
-        ARRAY[comments.created_at] AS path,
-        1 AS level
-      FROM
-        comments
-      WHERE
-        (${sId} <> '' AND comments.story_id = ${sId} AND comments.parent_id IS NULL)
-        OR
-        (${aId} <> '' AND comments.author = ${aId})
 
-      UNION ALL
-
-      SELECT
-        comments.*,
-        path || comments.created_at,
-        level + 1
-      FROM
-        comments
-      JOIN
-        dfs_comments ON comments.parent_id = dfs_comments.id
-    )`
-    .append(sql`,max_level_comments AS (`)
+  const query = sql`WITH RECURSIVE dfs_comments AS (`
+    .append(
+      unionAll(
+        db
+          .select({
+            id: commentsTable.id,
+            story_id: commentsTable.story_id,
+            username: commentsTable.username,
+            comment: commentsTable.comment,
+            parent_id: commentsTable.parent_id,
+            author: commentsTable.author,
+            created_at: commentsTable.created_at,
+            updated_at: commentsTable.updated_at,
+            path: sql`ARRAY[created_at]`.as("path"),
+            level: sql`1`.as("level"),
+          })
+          .from(commentsTable)
+          .where(
+            and(
+              sId
+                ? sql`comments.story_id = ${sId} AND comments.parent_id IS NULL`
+                : sql`1=1`,
+              aId ? sql`comments.author = ${aId}` : sql`1=1`
+            )
+          ),
+        db
+          .select({
+            id: commentsTable.id,
+            story_id: commentsTable.story_id,
+            username: commentsTable.username,
+            comment: commentsTable.comment,
+            parent_id: commentsTable.parent_id,
+            author: commentsTable.author,
+            created_at: commentsTable.created_at,
+            updated_at: commentsTable.updated_at,
+            path: sql`path || comments.created_at`.as("path"),
+            level: sql`level + 1`.as("level"),
+          })
+          .from(commentsTable)
+          .innerJoin(
+            sql`dfs_comments`,
+            sql`${commentsTable.parent_id} = dfs_comments.id`
+          )
+      ).getSQL()
+    )
+    .append(sql`),max_level_comments AS (`)
     .append(
       db
         .select({
