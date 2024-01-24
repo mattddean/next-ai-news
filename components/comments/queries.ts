@@ -13,9 +13,6 @@ export async function getComments({
   authorId?: string;
   page: number;
 }) {
-  const sId = storyId ?? "";
-  const aId = authorId ?? "";
-
   // fetch comments by story or author. if both
   // are provided, only fetch by story. use
   // max_level_comments to avoid fetching duplicate
@@ -41,16 +38,16 @@ export async function getComments({
             author: commentsTable.author,
             created_at: commentsTable.created_at,
             updated_at: commentsTable.updated_at,
-            path: sql`ARRAY[created_at]`.as("path"),
+            path: sql`ARRAY[${commentsTable.created_at}]`.as("path"),
             level: sql`1`.as("level"),
           })
           .from(commentsTable)
           .where(
             and(
-              sId
-                ? sql`comments.story_id = ${sId} AND comments.parent_id IS NULL`
+              storyId
+                ? sql`${commentsTable.story_id} = ${storyId} AND ${commentsTable.parent_id} IS NULL`
                 : sql`1=1`,
-              aId ? sql`comments.author = ${aId}` : sql`1=1`
+              authorId ? sql`${commentsTable.author} = ${authorId}` : sql`1=1`
             )
           ),
         db
@@ -63,7 +60,7 @@ export async function getComments({
             author: commentsTable.author,
             created_at: commentsTable.created_at,
             updated_at: commentsTable.updated_at,
-            path: sql`path || comments.created_at`.as("path"),
+            path: sql`path || ${commentsTable.created_at}`.as("path"),
             level: sql`level + 1`.as("level"),
           })
           .from(commentsTable)
@@ -148,7 +145,12 @@ export async function hasMoreComments({
       id: commentsTable.id,
     })
     .from(commentsTable)
-    .where(sql`story_id = ${storyId}`)
+    .where(
+      and(
+        storyId ? sql`${commentsTable.story_id} = ${storyId}` : sql`1=1`,
+        authorId ? sql`${commentsTable.author} = ${authorId}` : sql`1=1`
+      )
+    )
     .limit(1)
     .offset(page * PER_PAGE);
   return comments.length > 0;
