@@ -4,8 +4,6 @@ import {
   genStoryId,
   storiesTable,
   genCommentId,
-  commentsClosureTable,
-  genCommentClosureId,
   genUserId,
   usersTable,
 } from "@/app/db";
@@ -21,58 +19,6 @@ function getRandomDateWithinLastWeek(): Date {
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   return new Date(getRandomNumber(oneWeekAgo.getTime(), now.getTime()));
-}
-
-async function insertCommentClosureSelfRow(commentId: string) {
-  await db.insert(commentsClosureTable).values({
-    id: genCommentClosureId(),
-    ancestor_id: commentId,
-    descendant_id: commentId,
-    depth: 0,
-  });
-}
-
-async function insertCommentAndClosureRows({
-  newCommentId,
-  parentCommentId,
-  createdAt,
-  storyId,
-  author,
-  comment,
-}: {
-  newCommentId: string;
-  parentCommentId: string;
-  createdAt: Date;
-  storyId: string;
-  author: string;
-  comment: string;
-}) {
-  await db.insert(commentsTable).values({
-    id: newCommentId,
-    story_id: storyId,
-    parent_id: parentCommentId,
-    comment: comment,
-    created_at: createdAt,
-    author,
-  });
-  // Insert rows for the ancestors of the parent comment
-  const ancestorRows = await db
-    .select({
-      ancestor_id: commentsClosureTable.ancestor_id,
-      depth: commentsClosureTable.depth,
-    })
-    .from(commentsClosureTable)
-    .where(sql`${commentsClosureTable.descendant_id} = ${parentCommentId}`);
-  for (const row of ancestorRows) {
-    await db.insert(commentsClosureTable).values({
-      id: genCommentClosureId(),
-      ancestor_id: row.ancestor_id,
-      descendant_id: newCommentId,
-      depth: row.depth + 1,
-    });
-  }
-  // Insert row for the new comment itself
-  await insertCommentClosureSelfRow(newCommentId);
 }
 
 // Function to seed the database with stories
@@ -121,18 +67,17 @@ async function seedDatabase(): Promise<void> {
         created_at: commentCreatedAt,
         author: userIds[getRandomNumber(0, numUsers - 1)],
       });
-      await insertCommentClosureSelfRow(commentId);
 
       for (let k = 0; k < subCommentsPerComment; k++) {
         const subCommentCreatedAt = getRandomDateWithinLastWeek();
         const subCommentId = genCommentId();
 
-        await insertCommentAndClosureRows({
+        await db.insert(commentsTable).values({
           comment: `Sub-comment ${k + 1} on comment ${j + 1} on story ${i + 1}`,
-          createdAt: subCommentCreatedAt,
-          newCommentId: subCommentId,
-          parentCommentId: commentId,
-          storyId,
+          created_at: subCommentCreatedAt,
+          id: subCommentId,
+          parent_id: commentId,
+          story_id: storyId,
           author: userIds[getRandomNumber(0, numUsers - 1)],
         });
 
@@ -140,24 +85,16 @@ async function seedDatabase(): Promise<void> {
           const subSubCommentCreatedAt = getRandomDateWithinLastWeek();
           const subSubCommentId = genCommentId();
 
-          await insertCommentAndClosureRows({
+          await db.insert(commentsTable).values({
             comment: `Sub-sub-comment ${l + 1} on sub-comment ${
               k + 1
             } on comment ${j + 1} on story ${i + 1}`,
-            createdAt: subSubCommentCreatedAt,
-            newCommentId: subSubCommentId,
-            parentCommentId: subCommentId,
-            storyId,
+            created_at: subSubCommentCreatedAt,
+            id: subSubCommentId,
+            parent_id: subCommentId,
+            story_id: storyId,
             author: userIds[getRandomNumber(0, numUsers - 1)],
           });
-
-          // await db.execute(sql`
-          //   INSERT INTO comments_closure (id, ancestor_id, descendant_id, depth)
-          //   SELECT ${genCommentClosureId()}, ancestor_id, ${subSubCommentId}, depth + 1
-          //   FROM comments_closure
-          //   WHERE descendant_id = ${subCommentId}
-          //   UNION ALL
-          //   SELECT ${genCommentClosureId()}, ${subSubCommentId}, ${subSubCommentId}, 0;`);
         }
       }
     }

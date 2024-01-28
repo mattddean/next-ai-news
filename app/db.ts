@@ -140,26 +140,3 @@ export const commentsTable = pgTable(
 export const genCommentId = () => {
   return `comment_${nanoid(12)}`;
 };
-
-export const commentsClosureTable = pgTable(
-  "comments_closure",
-  {
-    id: varchar("id", { length: 256 }).primaryKey().notNull(),
-    ancestor_id: varchar("ancestor_id", { length: 256 })
-      .notNull()
-      .references(() => commentsTable.id),
-    descendant_id: varchar("descendant_id", { length: 256 })
-      .notNull()
-      .references(() => commentsTable.id),
-    depth: integer("depth").notNull(),
-  },
-  (t) => ({
-    cc_ancestor_id_descendant_id_idx: unique(
-      "cc_ancestor_id_descendant_id_idx"
-    ).on(t.ancestor_id, t.descendant_id),
-  })
-);
-
-export const genCommentClosureId = () => {
-  return `cc_${nanoid(12)}`;
-};
