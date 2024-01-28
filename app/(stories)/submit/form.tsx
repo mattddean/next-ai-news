@@ -7,6 +7,7 @@ import { useFormStatus } from "react-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { submitAction, type SubmitActionData } from "./actions";
 import { useFormState } from "react-dom";
+import { ErrorMessage } from "@/components/forms";
 
 export function SubmitForm() {
   const [state, formAction] = useFormState(submitAction, {});
@@ -117,19 +118,6 @@ export function SubmitFormFields({ error }: SubmitActionData) {
             text is optional.
           </p>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ErrorMessage({ errors }: { errors: string[] }) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:space-y-0 sm:space-x-4 items-start">
-      <div className="w-16" />
-      <div className="mt-1 text-md text-red-500">
-        {errors.map((error) => (
-          <div key={error}>{error}</div>
-        ))}
       </div>
     </div>
   );

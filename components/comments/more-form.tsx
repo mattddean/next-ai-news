@@ -4,6 +4,7 @@ import { useFormStatus } from "react-dom";
 import { useFormState } from "react-dom";
 import { GetMoreCommentsActionData, getMoreCommentsAction } from "./actions";
 import { CommentList } from "./list";
+import { ErrorMessage } from "@/components/forms";
 
 export function MoreCommentsForm({
   page,
@@ -14,19 +15,22 @@ export function MoreCommentsForm({
   storyId?: string;
   authorId?: string;
 }) {
-  const [state, formAction] = useFormState(getMoreCommentsAction, undefined);
+  const [state, formAction] = useFormState(getMoreCommentsAction, {});
 
   return (
     <>
-      {state?.data && <CommentList comments={state.data.comments} />}
-
-      {(!state || state.error) && (
+      {/* first display a "More" button to fetch the comments at page `page` */}
+      {(!state.data || state.error) && (
         <form action={formAction} className="max-w-2xl">
           <MoreCommentsFormFields {...state} page={page} storyId={storyId} />
         </form>
       )}
 
-      {state?.data?.hasMore && (
+      {/* then display the comments at page `page` after retrieved */}
+      {state.data && <CommentList comments={state.data.comments} />}
+
+      {/* and a form to fetch the following page if there is one */}
+      {state.data?.hasMore && (
         <MoreCommentsForm
           page={page + 1}
           storyId={storyId}
@@ -38,7 +42,6 @@ export function MoreCommentsForm({
 }
 
 function MoreCommentsFormFields({
-  data,
   error,
   storyId,
   authorId,
@@ -68,19 +71,6 @@ function MoreCommentsFormFields({
       error.fieldErrors.title != null ? (
         <ErrorMessage errors={error.fieldErrors.title} />
       ) : null}
-    </div>
-  );
-}
-
-function ErrorMessage({ errors }: { errors: string[] }) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:space-y-0 sm:space-x-4 items-start">
-      <div className="w-16" />
-      <div className="mt-1 text-md text-red-500">
-        {errors.map((error) => (
-          <div key={error}>{error}</div>
-        ))}
-      </div>
     </div>
   );
 }
